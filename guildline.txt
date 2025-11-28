@@ -1,0 +1,47 @@
+Run trong powershell
+
+SET UP
+Docker kafka: docker-compose up -d
+Python: pip install -r requirements.txt
+
+DEMO
+Kafka:
+- (optional) Kiểm tra log: docker logs -f kafka
+- Vào container kafka: docker exec -it kafka bash
+- Tạo topic: /opt/kafka/bin/kafka-topics.sh --create --topic orders --bootstrap-server localhost:9092 --partition 3 --replication-factor 1
+- (optional) Kiểm tra topic đã tạo: /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+- Truy cập vào http://localhost:8080( Kafka UI)
+
+Producer - Consumer
+- Chạy Producer: 
+python manage.py migrate
+python manage.py runserver
+- cd vào thư mục orders
+- Chạy 3 Consumer: cd consumers, chạy 3 consumers trong 3 cửa sổ powershell khác nhau
+python inventory.py
+python notification.py
+python analytics.py
+
+
+Gửi event:
+C1: Tự tạo event
+Dùng Postman hoặc curl:
+
+POST http://127.0.0.1:8000/orders/
+{
+    "product": "Laptop",
+    "quantity": 2
+}
+
+C2: chạy file fakedata.py tự động gửi event( có thể điều chỉnh số lượng message tại biến NUM_MESSAGES)
+
+Kết quả trên console:
+
+Inventory Service
+[Inventory] Update stock for: {'id': 1, 'product': 'Laptop', 'quantity': 2}
+
+Notification Service
+[Notification] Send email to customer: {'id': 1, 'product': 'Laptop', 'quantity': 2}
+
+Analytics Service
+[Analytics] Total orders processed: 1

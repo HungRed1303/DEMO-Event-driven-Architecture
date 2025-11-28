@@ -1,0 +1,51 @@
+version: '3.8'
+services:
+  kafka:
+    image: apache/kafka:4.0.0
+    container_name: kafka
+    hostname: kafka
+    ports:
+      - "9092:9092"   # Host client (Python)
+      - "9093:9093"   # Kafka UI (Docker)
+      - "9094:9094"   # Controller
+    environment:
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_NODE_ID: "1"
+
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9094"
+
+      # 3 listeners (host, docker, controller)
+      KAFKA_LISTENERS: >
+        CLIENT_HOST://0.0.0.0:9092,
+        CLIENT_DOCKER://0.0.0.0:9093,
+        CONTROLLER://0.0.0.0:9094
+
+      KAFKA_ADVERTISED_LISTENERS: >
+        CLIENT_HOST://localhost:9092,
+        CLIENT_DOCKER://kafka:9093
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >
+        CLIENT_HOST:PLAINTEXT,
+        CLIENT_DOCKER:PLAINTEXT,
+        CONTROLLER:PLAINTEXT
+
+      KAFKA_INTER_BROKER_LISTENER_NAME: "CLIENT_DOCKER"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9093
+    depends_on:
+      - kafka
+
+volumes:
+  kafka-data:
