@@ -5,36 +5,35 @@ services:
     container_name: kafka
     hostname: kafka
     ports:
-      - "9092:9092"   # Host client (Python)
-      - "9093:9093"   # Kafka UI (Docker)
-      - "9094:9094"   # Controller
+      - "9092:9092"
+      - "9093:9093"
+      - "9094:9094"
     environment:
       KAFKA_PROCESS_ROLES: "broker,controller"
       KAFKA_NODE_ID: "1"
-
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9094"
-
-      # 3 listeners (host, docker, controller)
       KAFKA_LISTENERS: >
         CLIENT_HOST://0.0.0.0:9092,
         CLIENT_DOCKER://0.0.0.0:9093,
         CONTROLLER://0.0.0.0:9094
-
       KAFKA_ADVERTISED_LISTENERS: >
         CLIENT_HOST://localhost:9092,
         CLIENT_DOCKER://kafka:9093
-
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >
         CLIENT_HOST:PLAINTEXT,
         CLIENT_DOCKER:PLAINTEXT,
         CONTROLLER:PLAINTEXT
-
       KAFKA_INTER_BROKER_LISTENER_NAME: "CLIENT_DOCKER"
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     volumes:
       - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -45,7 +44,22 @@ services:
       - KAFKA_CLUSTERS_0_NAME=local
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9093
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis-data:/data
 
 volumes:
   kafka-data:
+  redis-data:

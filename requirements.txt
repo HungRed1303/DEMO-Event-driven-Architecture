@@ -7,21 +7,27 @@ djangorestframework>=3.15,<4.0
 # Kafka client cho Python
 kafka-python>=2.1,<3.0
 
-# Faker để tạo dữ liệu giả (nếu cần gửi nhiều request demo)
+# Celery cho async task processing
+celery>=5.3,<6.0
+redis>=5.0,<6.0
+
+# Faker để tạo dữ liệu giả
 Faker>=23.0
 
-# Thư viện gửi HTTP request (cho script gửi order test)
+# HTTP requests
 requests>=2.31
 
-# CORS nếu frontend gọi API từ domain khác
+# CORS headers
 django-cors-headers>=4.0
 
-# Dotenv để quản lý biến môi trường (bootstrap_servers, topic...)
+# Environment variables
 python-dotenv>=1.1
 
-# Gunicorn nếu deploy production Django
+# Production server
 gunicorn>=21.2
 
-# Gửi message
-requests
-faker
+# Logging
+python-json-logger>=2.0
+
+# Retry mechanism
+tenacity>=8.2

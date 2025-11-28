@@ -1,18 +1,60 @@
-# analytics_consumer.py
-from kafka import KafkaConsumer
-import json
+import os
+import django
+import logging
 
-consumer = KafkaConsumer(
-    'orders',
-    bootstrap_servers='localhost:9092',
-    auto_offset_reset='earliest',
-    value_deserializer=lambda v: json.loads(v.decode('utf-8'))
-)
+# Setup Django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'eda_demo.settings')
+django.setup()
 
-print("Analytics service listening...")
+from django.conf import settings
+from orders.consumers.base_consumer import BaseKafkaConsumer
+from orders.tasks import record_analytics
 
-total_orders = 0
+logger = logging.getLogger(__name__)
 
-for message in consumer:
-    total_orders += 1
-    print("[Analytics] Total orders processed:", total_orders)
+class AnalyticsConsumer(BaseKafkaConsumer):
+    """Consumer để ghi nhận analytics"""
+    
+    def __init__(self):
+        super().__init__(
+            topic=settings.KAFKA_TOPIC_ORDERS,
+            group_id=f"{settings.KAFKA_CONSUMER_GROUP_PREFIX}-analytics",
+            process_name="Analytics Service"
+        )
+        self.total_orders = 0
+    
+    def process_message(self, message_data):
+        """
+        Xử lý message để record analytics
+        
+        Args:
+            message_data: Order data from Kafka
+        
+        Returns:
+            bool: True if successful
+        """
+        try:
+            order_id = message_data.get('id')
+            self.total_orders += 1
+            
+            logger.info(
+                f"[{self.process_name}] Processing analytics for order {order_id} - "
+                f"Total orders: {self.total_orders}"
+            )
+            
+            # Trigger Celery task
+            record_analytics.delay(message_data)
+            
+            logger.info(
+                f"[{self.process_name}] Queued analytics for order {order_id} - "
+                f"Running total: {self.total_orders}"
+            )
+            return True
+            
+        except Exception as e:
+            logger.error(f"[{self.process_name}] Error: {e}", exc_info=True)
+            return False
+
+if __name__ == '__main__':
+    consumer = AnalyticsConsumer()
+    consumer.start()

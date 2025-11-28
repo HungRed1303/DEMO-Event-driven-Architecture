@@ -1,47 +1,320 @@
-Run trong powershell
+==================================================================
+EVENT-DRIVEN ARCHITECTURE DEMO WITH DJANGO + KAFKA + CELERY
+==================================================================
 
-SET UP
-Docker kafka: docker-compose up -d
-Python: pip install -r requirements.txt
+📋 PREREQUISITES
+- Docker Desktop installed
+- Python 3.8+ installed
+- PowerShell or Terminal
 
-DEMO
-Kafka:
-- (optional) Kiểm tra log: docker logs -f kafka
-- Vào container kafka: docker exec -it kafka bash
-- Tạo topic: /opt/kafka/bin/kafka-topics.sh --create --topic orders --bootstrap-server localhost:9092 --partition 3 --replication-factor 1
-- (optional) Kiểm tra topic đã tạo: /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092
-- Truy cập vào http://localhost:8080( Kafka UI)
+==================================================================
+1. SETUP - FIRST TIME ONLY
+==================================================================
 
-Producer - Consumer
-- Chạy Producer: 
+A. Start Infrastructure (Kafka + Redis)
+----------------------------------------
+docker-compose up -d
+
+# Kiểm tra containers đang chạy:
+docker ps
+
+# Kiểm tra logs:
+docker logs -f kafka
+docker logs -f redis
+
+B. Install Python Dependencies
+----------------------------------------
+pip install -r requirements.txt
+
+C. Database Setup
+----------------------------------------
+python manage.py makemigrations
 python manage.py migrate
+
+D. Create Kafka Topics
+----------------------------------------
+# Vào container Kafka:
+docker exec -it kafka bash
+
+# Tạo topic orders (3 partitions):
+/opt/kafka/bin/kafka-topics.sh --create --topic orders --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
+
+# Tạo topic Dead Letter Queue:
+/opt/kafka/bin/kafka-topics.sh --create --topic orders-dlq --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+
+# Kiểm tra topics đã tạo:
+/opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+
+# Exit container:
+exit
+
+E. Truy cập Kafka UI
+----------------------------------------
+Mở browser: http://localhost:8080
+- Xem topics, partitions, consumer groups
+- Monitor messages flow
+
+==================================================================
+2. RUNNING THE DEMO
+==================================================================
+
+Bạn cần mở 6 cửa sổ PowerShell/Terminal riêng biệt:
+
+┌─────────────────────────────────────────────────────────────┐
+│ CỬA SỔ 1: Django API Server                                 │
+└─────────────────────────────────────────────────────────────┘
 python manage.py runserver
-- cd vào thư mục orders
-- Chạy 3 Consumer: cd consumers, chạy 3 consumers trong 3 cửa sổ powershell khác nhau
+
+# API sẽ chạy tại: http://127.0.0.1:8000
+
+
+┌─────────────────────────────────────────────────────────────┐
+│ CỬA SỔ 2: Celery Worker (Xử lý async tasks)                │
+└─────────────────────────────────────────────────────────────┘
+celery -A eda_demo worker --loglevel=info --pool=solo
+
+# Windows user: phải dùng --pool=solo
+# Linux/Mac user: có thể bỏ --pool=solo
+
+
+┌─────────────────────────────────────────────────────────────┐
+│ CỬA SỔ 3: Inventory Consumer                                │
+└─────────────────────────────────────────────────────────────┘
+cd orders/consumers
 python inventory.py
+
+
+┌─────────────────────────────────────────────────────────────┐
+│ CỬA SỔ 4: Notification Consumer                             │
+└─────────────────────────────────────────────────────────────┘
+cd orders/consumers
 python notification.py
+
+
+┌─────────────────────────────────────────────────────────────┐
+│ CỬA SỔ 5: Analytics Consumer                                │
+└─────────────────────────────────────────────────────────────┘
+cd orders/consumers
 python analytics.py
 
 
-Gửi event:
-C1: Tự tạo event
-Dùng Postman hoặc curl:
+┌─────────────────────────────────────────────────────────────┐
+│ CỬA SỔ 6: Sending Test Data                                 │
+└─────────────────────────────────────────────────────────────┘
+# Option 1: Tự động gửi nhiều requests
+python fakedata.py
 
-POST http://127.0.0.1:8000/orders/
+# Option 2: Gửi request thủ công bằng curl/Postman
+curl -X POST http://127.0.0.1:8000/orders/ ^
+  -H "Content-Type: application/json" ^
+  -d "{\"product\": \"Laptop\", \"quantity\": 2}"
+
+# Option 3: Test idempotency
+curl -X POST http://127.0.0.1:8000/orders/ ^
+  -H "Content-Type: application/json" ^
+  -H "X-Idempotency-Key: test-key-123" ^
+  -d "{\"product\": \"Mouse\", \"quantity\": 5}"
+
+==================================================================
+3. TESTING & MONITORING
+==================================================================
+
+A. Check Order Status
+----------------------------------------
+# Lấy status của order ID = 1
+curl http://127.0.0.1:8000/orders/1/status/
+
+Response:
 {
-    "product": "Laptop",
-    "quantity": 2
+  "order_id": 1,
+  "status": "completed",
+  "event_published": true,
+  "inventory_processed": true,
+  "notification_sent": true,
+  "analytics_recorded": true
 }
 
-C2: chạy file fakedata.py tự động gửi event( có thể điều chỉnh số lượng message tại biến NUM_MESSAGES)
+B. Health Check
+----------------------------------------
+curl http://127.0.0.1:8000/health/
 
-Kết quả trên console:
+Response:
+{
+  "status": "healthy",
+  "services": {
+    "database": "healthy",
+    "kafka": "healthy",
+    "celery": "healthy"
+  }
+}
 
-Inventory Service
-[Inventory] Update stock for: {'id': 1, 'product': 'Laptop', 'quantity': 2}
+C. Monitor Kafka UI
+----------------------------------------
+Mở: http://localhost:8080
+- Topics → orders: Xem messages đã gửi
+- Consumer Groups: Xem offset của từng consumer
 
-Notification Service
-[Notification] Send email to customer: {'id': 1, 'product': 'Laptop', 'quantity': 2}
+D. Monitor Celery
+----------------------------------------
+# Trong cửa sổ mới:
+celery -A eda_demo inspect active
+celery -A eda_demo inspect stats
 
-Analytics Service
-[Analytics] Total orders processed: 1
+==================================================================
+4. DEMO FLOW EXPLANATION
+==================================================================
+
+ASYNCHRONOUS FLOW (Xử lý bất đồng bộ):
+---------------------------------------
+
+1. Client gửi POST request → Django API
+   └─> Response trả về NGAY LẬP TỨC (201 Created)
+   └─> Task ID được tạo cho background processing
+
+2. Celery Worker nhận task từ Redis queue
+   └─> Publish event to Kafka
+   └─> Cập nhật order status = "processing"
+
+3. Kafka nhận event → Distribute đến 3 consumers
+   └─> Inventory Consumer (Consumer Group 1)
+   └─> Notification Consumer (Consumer Group 2)
+   └─> Analytics Consumer (Consumer Group 3)
+
+4. Mỗi consumer xử lý độc lập:
+   ├─> Inventory: Trigger Celery task → Update stock
+   ├─> Notification: Trigger Celery task → Send email
+   └─> Analytics: Trigger Celery task → Record metrics
+
+5. Sau khi tất cả tasks hoàn thành:
+   └─> Order status = "completed"
+
+BENEFITS OF THIS ARCHITECTURE:
+-------------------------------
+✅ Non-blocking: API response ngay lập tức
+✅ Scalable: Có thể chạy nhiều workers/consumers
+✅ Resilient: Retry mechanism + Dead Letter Queue
+✅ Decoupled: Services không phụ thuộc vào nhau
+✅ Idempotent: Tránh xử lý trùng lặp
+
+==================================================================
+5. ERROR HANDLING & RETRY
+==================================================================
+
+A. Automatic Retry
+----------------------------------------
+- Celery tasks tự động retry 3 lần nếu failed
+- Delay giữa các retry: 60 seconds
+- Sau 3 lần retry fail → Gửi đến Dead Letter Queue
+
+B. Dead Letter Queue
+----------------------------------------
+# Xem messages trong DLQ:
+docker exec -it kafka bash
+/opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic orders-dlq \
+  --from-beginning
+
+C. Manual Offset Reset
+----------------------------------------
+# Nếu consumer bị stuck, reset offset:
+docker exec -it kafka bash
+/opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 \
+  --group eda-demo-inventory \
+  --reset-offsets \
+  --to-earliest \
+  --topic orders \
+  --execute
+
+==================================================================
+6. STOP & CLEANUP
+==================================================================
+
+A. Stop All Services
+----------------------------------------
+# Stop Django: Ctrl+C
+# Stop Celery Worker: Ctrl+C
+# Stop Consumers: Ctrl+C (x3)
+
+B. Stop Docker Containers
+----------------------------------------
+docker-compose down
+
+# Nếu muốn xóa volumes (data sẽ mất):
+docker-compose down -v
+
+C. Clean Database
+----------------------------------------
+# Xóa database file:
+del db.sqlite3
+
+# Xóa migrations:
+del orders\migrations\0001_initial.py
+
+==================================================================
+7. TROUBLESHOOTING
+==================================================================
+
+Problem: Celery không connect được Redis
+Solution:
+  - Kiểm tra Redis: docker logs redis
+  - Kiểm tra port 6379: netstat -ano | findstr 6379
+  - Restart Redis: docker restart redis
+
+Problem: Consumer không nhận được messages
+Solution:
+  - Kiểm tra topic exists: kafka-topics.sh --list
+  - Kiểm tra consumer group: kafka-consumer-groups.sh --list
+  - Reset offset về earliest (xem section 5C)
+
+Problem: Celery task bị stuck
+Solution:
+  - Xem active tasks: celery -A eda_demo inspect active
+  - Purge queue: celery -A eda_demo purge
+  - Restart worker
+
+Problem: Port already in use
+Solution:
+  - Kiểm tra process: netstat -ano | findstr <PORT>
+  - Kill process: taskkill /PID <PID> /F
+
+==================================================================
+8. PRODUCTION CONSIDERATIONS
+==================================================================
+
+⚠️  Những điều cần thay đổi khi deploy production:
+
+1. Security:
+   - Đổi SECRET_KEY trong settings.py
+   - Set DEBUG = False
+   - Configure ALLOWED_HOSTS
+   - Use environment variables
+
+2. Database:
+   - Đổi từ SQLite sang PostgreSQL/MySQL
+   - Setup connection pooling
+
+3. Kafka:
+   - Setup multiple brokers (cluster)
+   - Configure replication factor > 1
+   - Enable authentication (SASL/SSL)
+
+4. Celery:
+   - Use RabbitMQ instead of Redis (more reliable)
+   - Configure max_retries per task type
+   - Setup Flower for monitoring
+
+5. Monitoring:
+   - Add Prometheus + Grafana
+   - Setup alerting (PagerDuty, Slack)
+   - Log aggregation (ELK stack)
+
+6. Load Balancing:
+   - Nginx/HAProxy for Django
+   - Multiple Celery workers
+   - Multiple Kafka consumers per group
+
+==================================================================
+HAPPY CODING! 🚀
+==================================================================
