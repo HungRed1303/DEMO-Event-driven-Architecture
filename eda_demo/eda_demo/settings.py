@@ -76,10 +76,19 @@ WSGI_APPLICATION = 'eda_demo.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'eda_db',
+        'USER': 'eda_user',
+        'PASSWORD': 'eda_pass',
+        'HOST': 'localhost',
+        'PORT': '5432',
+        'CONN_MAX_AGE': 0,
+        'OPTIONS': {
+            'connect_timeout': 5,
+        },
     }
 }
+
 
 
 # Password validation
